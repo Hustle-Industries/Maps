@@ -62,16 +62,20 @@ apply_bunny() {
         echo "[Bunny] пропуск — не сконфигурировано"
         return 0
     fi
+    host="${host#http://}"; host="${host#https://}"; host="${host%%/*}"
     local p key url
     if [ ${#UPLOAD[@]} -gt 0 ]; then
         for p in "${UPLOAD[@]}"; do
             key="${prefix}${p}"
             url="https://${host}/${zone}/${key}"
             echo "[Bunny] up $key"
-            curl -sf --retry 2 -X PUT "$url" \
-                -H "AccessKey: ${pass}" \
-                -H "Content-Type: application/octet-stream" \
-                --data-binary @"$p" >/dev/null
+            if ! curl -sfS --retry 2 -X PUT "$url" \
+                    -H "AccessKey: ${pass}" \
+                    -H "Content-Type: application/octet-stream" \
+                    --data-binary @"$p" >/dev/null; then
+                echo "[Bunny] ОШИБКА загрузки. Проверь BUNNY_HOSTNAME (storage-хост, напр. storage.bunnycdn.com, без https:// и без .b-cdn.net) и BUNNY_STORAGE_ZONE/BUNNY_PASSWORD." >&2
+                exit 1
+            fi
         done
     fi
     if [ ${#DELETE[@]} -gt 0 ]; then
