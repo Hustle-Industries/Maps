@@ -1,0 +1,59 @@
+name: sync-maps
+
+on:
+  push:
+    branches: [main]
+    paths: ['**/*.map']
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'diff — по последнему коммиту; full — залить все карты (сидирование)'
+        type: choice
+        options: [full, diff]
+        default: full
+
+concurrency:
+  group: sync-maps
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # нужен BEFORE-коммит для диффа
+          filter: blob:none       # но БЕЗ 3.7 ГБ блобов истории — тянем только текущие файлы
+
+      - name: Sync maps to S3 (Yandex + Bunny)
+        id: sync
+        env:
+          MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'diff' }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          YC_ACCESS_KEY_ID: ${{ secrets.YC_ACCESS_KEY_ID }}
+          YC_SECRET_ACCESS_KEY: ${{ secrets.YC_SECRET_ACCESS_KEY }}
+          YC_BUCKET: ${{ secrets.YC_BUCKET }}
+          YC_PREFIX: ${{ secrets.YC_PREFIX }}
+          BUNNY_STORAGE_ZONE: ${{ secrets.BUNNY_STORAGE_ZONE }}
+          BUNNY_PASSWORD: ${{ secrets.BUNNY_PASSWORD }}
+          BUNNY_ENDPOINT: ${{ secrets.BUNNY_ENDPOINT }}
+          BUNNY_PREFIX: ${{ secrets.BUNNY_PREFIX }}
+          MSG_FILE: ${{ runner.temp }}/tg-msg.html
+        run: |
+          chmod +x scripts/*.sh
+          ./scripts/sync-maps.sh
+
+      - name: Notify Telegram
+        if: always() && steps.sync.outputs.changed != '0'
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHATS: ${{ secrets.TELEGRAM_CHAT_IDS }}
+          MSG_FILE: ${{ runner.temp }}/tg-msg.html
+        run: |
+          chmod +x scripts/notify.sh
+          if [ "${{ steps.sync.outcome }}" != "success" ]; then
+            RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            printf '❌ <b>Ошибка синхронизации карт</b>\n<a href="%s">лог</a>' "$RUN_URL" > "$MSG_FILE"
+          fi
+          ./scripts/notify.sh "$MSG_FILE"
