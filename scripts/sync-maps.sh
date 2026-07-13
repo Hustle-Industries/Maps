@@ -3,6 +3,8 @@ set -euo pipefail
 
 MODE="${MODE:-diff}"
 MSG_FILE="${MSG_FILE:-/tmp/tg-msg.html}"
+CONTENT_TYPE="${CONTENT_TYPE:-application/octet-stream}"
+CACHE_CONTROL="${CACHE_CONTROL:-public, max-age=1036800, immutable}"
 
 UPLOAD=()
 DELETE=()
@@ -44,7 +46,8 @@ apply_yandex() {
         for p in "${UPLOAD[@]}"; do
             key="${prefix}${p}"
             echo "[Yandex] up $key"
-            aws s3 cp "$p" "s3://${bucket}/${key}" --endpoint-url "$ep" --only-show-errors
+            aws s3 cp "$p" "s3://${bucket}/${key}" --endpoint-url "$ep" \
+                --content-type "$CONTENT_TYPE" --cache-control "$CACHE_CONTROL" --only-show-errors
         done
     fi
     if [ ${#DELETE[@]} -gt 0 ]; then
@@ -71,7 +74,8 @@ apply_bunny() {
             echo "[Bunny] up $key"
             if ! curl -sfS --retry 2 -X PUT "$url" \
                     -H "AccessKey: ${pass}" \
-                    -H "Content-Type: application/octet-stream" \
+                    -H "Content-Type: ${CONTENT_TYPE}" \
+                    -H "Cache-Control: ${CACHE_CONTROL}" \
                     --data-binary @"$p" >/dev/null; then
                 echo "[Bunny] ОШИБКА загрузки. Проверь BUNNY_HOSTNAME (storage-хост, напр. storage.bunnycdn.com, без https:// и без .b-cdn.net) и BUNNY_STORAGE_ZONE/BUNNY_PASSWORD." >&2
                 exit 1
