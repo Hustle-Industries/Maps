@@ -37,7 +37,7 @@ jobs:
           YC_PREFIX: ${{ secrets.YC_PREFIX }}
           BUNNY_STORAGE_ZONE: ${{ secrets.BUNNY_STORAGE_ZONE }}
           BUNNY_PASSWORD: ${{ secrets.BUNNY_PASSWORD }}
-          BUNNY_ENDPOINT: ${{ secrets.BUNNY_ENDPOINT }}
+          BUNNY_HOSTNAME: ${{ secrets.BUNNY_HOSTNAME }}
           BUNNY_PREFIX: ${{ secrets.BUNNY_PREFIX }}
           MSG_FILE: ${{ runner.temp }}/tg-msg.html
         run: |

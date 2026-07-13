@@ -31,36 +31,62 @@ CHANGED=$(( ${#UPLOAD[@]} + ${#DELETE[@]} ))
 echo "MODE=$MODE  к загрузке: ${#UPLOAD[@]}, к удалению: ${#DELETE[@]}"
 if [ -n "${GITHUB_OUTPUT:-}" ]; then echo "changed=$CHANGED" >> "$GITHUB_OUTPUT"; fi
 
-apply_target() {
-    local name="$1" ak="$2" sk="$3" region="$4" endpoint="$5" bucket="$6" prefix="$7"
-    if [ -z "$ak" ] || [ -z "$sk" ] || [ -z "$bucket" ] || [ -z "$endpoint" ]; then
-        echo "[$name] пропуск — цель не сконфигурирована"
+apply_yandex() {
+    local ak="$1" sk="$2" bucket="$3" prefix="$4"
+    if [ -z "$ak" ] || [ -z "$sk" ] || [ -z "$bucket" ]; then
+        echo "[Yandex] пропуск — не сконфигурировано"
         return 0
     fi
+    export AWS_ACCESS_KEY_ID="$ak" AWS_SECRET_ACCESS_KEY="$sk" AWS_DEFAULT_REGION="ru-central1"
+    local ep="https://storage.yandexcloud.net"
     local p key
     if [ ${#UPLOAD[@]} -gt 0 ]; then
         for p in "${UPLOAD[@]}"; do
             key="${prefix}${p}"
-            echo "[$name] up $key"
-            AWS_ACCESS_KEY_ID="$ak" AWS_SECRET_ACCESS_KEY="$sk" AWS_DEFAULT_REGION="$region" \
-                aws s3 cp "$p" "s3://${bucket}/${key}" --endpoint-url "$endpoint" --only-show-errors
+            echo "[Yandex] up $key"
+            aws s3 cp "$p" "s3://${bucket}/${key}" --endpoint-url "$ep" --only-show-errors
         done
     fi
     if [ ${#DELETE[@]} -gt 0 ]; then
         for p in "${DELETE[@]}"; do
             key="${prefix}${p}"
-            echo "[$name] rm $key"
-            AWS_ACCESS_KEY_ID="$ak" AWS_SECRET_ACCESS_KEY="$sk" AWS_DEFAULT_REGION="$region" \
-                aws s3 rm "s3://${bucket}/${key}" --endpoint-url "$endpoint" --only-show-errors || true
+            echo "[Yandex] rm $key"
+            aws s3 rm "s3://${bucket}/${key}" --endpoint-url "$ep" --only-show-errors || true
+        done
+    fi
+}
+
+apply_bunny() {
+    local host="$1" zone="$2" pass="$3" prefix="$4"
+    if [ -z "$host" ] || [ -z "$zone" ] || [ -z "$pass" ]; then
+        echo "[Bunny] пропуск — не сконфигурировано"
+        return 0
+    fi
+    local p key url
+    if [ ${#UPLOAD[@]} -gt 0 ]; then
+        for p in "${UPLOAD[@]}"; do
+            key="${prefix}${p}"
+            url="https://${host}/${zone}/${key}"
+            echo "[Bunny] up $key"
+            curl -sf --retry 2 -X PUT "$url" \
+                -H "AccessKey: ${pass}" \
+                -H "Content-Type: application/octet-stream" \
+                --data-binary @"$p" >/dev/null
+        done
+    fi
+    if [ ${#DELETE[@]} -gt 0 ]; then
+        for p in "${DELETE[@]}"; do
+            key="${prefix}${p}"
+            url="https://${host}/${zone}/${key}"
+            echo "[Bunny] rm $key"
+            curl -s -X DELETE "$url" -H "AccessKey: ${pass}" >/dev/null || true
         done
     fi
 }
 
 if [ "$CHANGED" -gt 0 ]; then
-    apply_target "Yandex" "${YC_ACCESS_KEY_ID:-}" "${YC_SECRET_ACCESS_KEY:-}" \
-        "ru-central1" "https://storage.yandexcloud.net" "${YC_BUCKET:-}" "${YC_PREFIX:-}"
-    apply_target "Bunny" "${BUNNY_STORAGE_ZONE:-}" "${BUNNY_PASSWORD:-}" \
-        "${BUNNY_REGION:-de}" "${BUNNY_ENDPOINT:-}" "${BUNNY_STORAGE_ZONE:-}" "${BUNNY_PREFIX:-}"
+    apply_yandex "${YC_ACCESS_KEY_ID:-}" "${YC_SECRET_ACCESS_KEY:-}" "${YC_BUCKET:-}" "${YC_PREFIX:-}"
+    apply_bunny "${BUNNY_HOSTNAME:-storage.bunnycdn.com}" "${BUNNY_STORAGE_ZONE:-}" "${BUNNY_PASSWORD:-}" "${BUNNY_PREFIX:-}"
 fi
 
 {
